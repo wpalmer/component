@@ -162,6 +162,8 @@ component(){
 				else
 					component debug "ACQUIRE: ${abs_component}"
 
+					local component_dir="$(dirname "${local_script}")"
+
 					if [[ ! -d "${component_dir}" ]]; then
 						component debug "MKDIR: $component_dir"
 						if ! mkdir -p "${component_dir}"; then
@@ -170,7 +172,6 @@ component(){
 						fi
 					fi
 
-					local component_dir="$(dirname "${local_script}")"
 					local base_url
 					while read -r -d ' ' base_url; do
 						[[ -z "$base_url" ]] && continue
@@ -180,6 +181,7 @@ component(){
 						if curl -f -s -o "${local_script}" "${url}"
 						then
 							chmod a+x "${local_script}" || return 1
+							printf '%s\n' "${local_script}"
 							return 0
 						else
 							component debug "ACQUIRE[URL]: ${url} [FAILED]"
