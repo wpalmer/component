@@ -139,21 +139,29 @@ component(){
 				local abs_component="$prefix/$component"
 				abs_component="${abs_component#/}"
 				abs_component="$(component expand "$abs_component")"
-				local local_script="${COMPONENT_BASE}/${abs_component}.sh"
+				
+				local local_script=
+				local base=
+				while read -r -d : base; do
+					[[ -z "$base" ]] && continue
+					local_script="${base}/${abs_component}.sh"
+					
+					if [[ -x "${local_script}" ]]; then
+						printf '%s\n' "${local_script}"
+						return 0
+					elif [[ -w "${local_script}" ]]; then
+						chmod a+x "${local_script}" || return 1
+						printf '%s\n' "${local_script}"
+						return 0
+					fi
+				done <<<"${COMPONENT_BASE}:"
 
-				if [[ -x "${local_script}" ]]; then
-					printf '%s\n' "${local_script}"
-					return 0
-				elif [[ -w "${local_script}" ]]; then
-					chmod a+x "${local_script}" || return 1
-					printf '%s\n' "${local_script}"
-					return 0
-				elif [[ "$COMPONENT_BASE_URL" = "-" ]]; then
+				local_script="${COMPONENT_BASE%%:*}/${abs_component}.sh"
+				if [[ "$COMPONENT_BASE_URL" = "-" ]]; then
 					continue
 				else
 					component debug "ACQUIRE: ${abs_component}"
-					component debug "ACQUIRE[URL]: ${COMPONENT_BASE_URL%/}/${abs_component}.sh"
-					local component_dir="$(dirname "${local_script}")"
+
 					if [[ ! -d "${component_dir}" ]]; then
 						component debug "MKDIR: $component_dir"
 						if ! mkdir -p "${component_dir}"; then
@@ -161,17 +169,25 @@ component(){
 							return 1
 						fi
 					fi
-					
-					if curl -f -s \
-						-o "${local_script}" \
-						"${COMPONENT_BASE_URL%/}/${abs_component}.sh"
-					then
-						chmod a+x "${local_script}" || return 1
-						return 0
-					else
-						component debug "ACQUIRE: $abs_component [FAILED]"
-						continue
-					fi
+
+					local component_dir="$(dirname "${local_script}")"
+					local base_url
+					while read -r -d ' ' base_url; do
+						[[ -z "$base_url" ]] && continue
+						local url="${base_url%/}/${abs_component}.sh"
+						component debug "ACQUIRE[URL]: ${url}"
+						
+						if curl -f -s -o "${local_script}" "${url}"
+						then
+							chmod a+x "${local_script}" || return 1
+							return 0
+						else
+							component debug "ACQUIRE[URL]: ${url} [FAILED]"
+							continue
+						fi
+					done <<<"${COMPONENT_BASE_URL} "
+
+					component debug "ACQUIRE: $abs_component [FAILED]"
 				fi
 			done <<<"${COMPONENT_PREFIX}::"
 			
@@ -180,8 +196,18 @@ component(){
 			;;
 		register-script)
 			local script="$1"
-			local component="${script#$COMPONENT_BASE}"
-			component="${component%.sh}"
+			local component=
+			local base=
+			local candidate=
+			local longest=
+			while read -r -d ':' base; do
+				candidate="${script#$base}"
+				[[ "${candidate}" = "${script}" ]] && continue
+
+				[[ ${#candidate} -gt ${#longest} ]] && longest="$candidate"
+			done <<<"${COMPONENT_BASE}"
+
+			component="${longest%.sh}"
 			component="${component#/}"
 
 			component register "$component"
@@ -215,7 +241,7 @@ component(){
 
 				[[ -r "${COMPONENT_REGISTRY}" ]] || continue
 				if \
-					grep -q -F \
+					grep -q -F -x \
 						-e "$abs_component" \
 						"${COMPONENT_REGISTRY}"
 				then
