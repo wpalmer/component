@@ -201,17 +201,25 @@ component(){
 			local component=
 			local base=
 			local candidate=
-			local longest=
+			local shortest=
+			echo "BASE: ${COMPONENT_BASE}:" >&2
 			while read -r -d ':' base; do
+				[[ -z "$base" ]] && continue
 				candidate="${script#$base}"
 				[[ "${candidate}" = "${script}" ]] && continue
 
-				[[ ${#candidate} -gt ${#longest} ]] && longest="$candidate"
-			done <<<"${COMPONENT_BASE}"
+				if [[ -z "$shortest" ]] || [[ ${#candidate} -lt ${#shortest} ]]; then
+					shortest="$candidate"
+				fi
+			done <<<"${COMPONENT_BASE}:"
 
-			component="${longest%.sh}"
+			if [[ -z "$shortest" ]]; then
+				echo "Failed to register script $script" >&2
+				exit 1
+			fi
+
+			component="${shortest%.sh}"
 			component="${component#/}"
-
 			component register "$component"
 			;;
 		register)
